@@ -307,8 +307,8 @@ def extract_ticket_odds(page, race_id, tickets):
     }''', tickets)
 
 # --- StreamlitのUI設定 ---
-st.set_page_config(page_title="競輪AI予想＆資金配分", page_icon="🚴‍♀️", layout="wide")
-st.title("🚴‍♀️ ガールズケイリン AI予想＆資金配分システム")
+st.set_page_config(page_title="競輪AI予想", page_icon="🚴‍♀️", layout="wide")
+st.title("🚴‍♀️ ガールズケイリン AI予想")
 
 if st.button("🚀 本日のレースデータを取得開始"):
     with st.spinner("スクレイピングを実行しています。数分かかる場合があります..."):
