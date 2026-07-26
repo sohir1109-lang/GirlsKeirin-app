@@ -307,14 +307,14 @@ def extract_ticket_odds(page, race_id, tickets):
     }''', tickets)
 
 # --- StreamlitのUI設定 ---
-st.set_page_config(page_title="競輪AI予想", page_icon="🚴‍♀️", layout="wide")
-st.title("🚴‍♀️ ガールズケイリン AI予想")
+st.set_page_config(page_title="競輪AI予想＆資金配分", page_icon="🚴‍♀️", layout="wide")
+st.title("🚴‍♀️ ガールズケイリン AI予想＆資金配分システム")
 
 if st.button("🚀 本日のレースデータを取得開始"):
     with st.spinner("スクレイピングを実行しています。数分かかる場合があります..."):
         with sync_playwright() as p:
             # クラウド化を見据えて headless=True に変更
-browser = p.chromium.launch(headless=True, channel="chrome", args=["--disable-blink-features=AutomationControlled"])
+            browser = p.chromium.launch(headless=True, channel="chrome", args=["--disable-blink-features=AutomationControlled"])
             context = browser.new_context(viewport={"width": 1280, "height": 720}, ignore_https_errors=True)
             page = context.new_page()
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
