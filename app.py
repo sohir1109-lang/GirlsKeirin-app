@@ -307,8 +307,10 @@ def extract_ticket_odds(page, race_id, tickets):
     }''', tickets)
 
 # --- StreamlitのUI設定 ---
+# サイトの表示名を「ガールズケイリン予想システム」に変更
 st.set_page_config(page_title="ガールズケイリン予想システム", page_icon="🚴‍♀️", layout="wide")
-st.title("🚴‍♀️ ガールズケイリン 予想＆資金配分システム")
+# ページのタイトルを「ガールズケイリン予想＆資金配分システム」に変更
+st.title("🚴‍♀️ ガールズケイリン予想＆資金配分システム")
 
 if st.button("🚀 本日のレースデータを取得開始"):
     with st.spinner("スクレイピングを実行しています。数分かかる場合があります..."):
@@ -383,6 +385,8 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                 race_evaluations.sort(key=lambda x: x['調子スコア'], reverse=True)
                                 for rank, p in enumerate(race_evaluations, 1):
                                     p['勢いギャップ'] = p['得点順位'] - rank 
+                                    
+                                    # 勢いギャップの係数を 5.0 から 3.0 に変更
                                     p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ'] * 3.0), 2)
 
                                 race_evaluations.sort(key=lambda x: x['総合期待度'], reverse=True)
