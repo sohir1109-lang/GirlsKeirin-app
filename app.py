@@ -352,164 +352,153 @@ if st.button("🚀 本日のレースデータを取得開始"):
                             if entry_data['venue_name']:
                                 current_venue_name = entry_data['venue_name']
                                 
-                            st.subheader(f"🏆 【{current_venue_name}】 {i}R (L級)")
-                            players = entry_data['players']
-                            player_names = [p['name'] for p in players]
-                            past_results_data = extract_past_results(page, results_url, player_names)
-                            
-                            race_evaluations = []
-                            for p_data in players:
-                                name = p_data['name']
-                                waku = p_data['waku']
-                                score_val = float(p_data['score']) if p_data['score'] != "---.--" else 40.0
-                                target_races = past_results_data.get(name, [])
-                                condition_score = calculate_condition_score(target_races)
+                            # ここからが「折りたたみ」の表示ブロックです
+                            with st.expander(f"🏆 【{current_venue_name}】 {i}R (L級)", expanded=False):
+                                players = entry_data['players']
+                                player_names = [p['name'] for p in players]
+                                past_results_data = extract_past_results(page, results_url, player_names)
                                 
-                                race_evaluations.append({
-                                    '車番': waku,
-                                    '選手名': name,
-                                    '競走得点': score_val,
-                                    '調子スコア': condition_score,
-                                    'raw_waku': waku,
-                                    'raw_cond': condition_score
-                                })
-                            
-                            # --- 独自の「ギャップ理論」を組み込む ---
-                            # 1. 競走得点の順位を出す
-                            race_evaluations.sort(key=lambda x: x['競走得点'], reverse=True)
-                            for rank, p in enumerate(race_evaluations, 1):
-                                p['得点順位'] = rank
-                                
-                            # 2. 調子スコアの順位を出す
-                            race_evaluations.sort(key=lambda x: x['調子スコア'], reverse=True)
-                            for rank, p in enumerate(race_evaluations, 1):
-                                # 得点順位(人気)より調子順位(実力)が上ならプラスになる
-                                p['勢いギャップ'] = p['得点順位'] - rank 
-                                
-                                # 3. 買い目選定のための「総合期待度」を算出（ギャップをボーナス加点）
-                                p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ'] * 5.0), 2)
-
-                            # 総合期待度が高い順に並び替え
-                            race_evaluations.sort(key=lambda x: x['総合期待度'], reverse=True)
-                            
-                            # Streamlit用のデータフレーム作成（選手データ）
-                            df_players = pd.DataFrame(race_evaluations)
-                            df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
-                            st.write("▼ 出走選手データ (総合期待度順：実力と勢いのギャップを加味)")
-                            
-                            # 画面にギャップと総合期待度を表示
-                            st.dataframe(df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']], hide_index=True)
-                            
-                            tickets = []
-                            if len(race_evaluations) >= 5:
-                                top_players = race_evaluations[:5] # 「総合期待度」の上位5名を選ぶ
-                                top5_waku = [str(p['raw_waku']) for p in top_players]
-                                first_place = top5_waku[:2]
-                                second_place = top5_waku[:3]
-                                third_place = top5_waku[:5]
-                                
-                                w1_bonus_waku = None
-                                if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15:
-                                    w1_bonus_waku = str(top_players[0]['raw_waku'])
-                                
-                                for first in first_place:
-                                    for second in second_place:
-                                        if first == second: continue
-                                        for third in third_place:
-                                            if first == third or second == third: continue
-                                            tickets.append(f"{first}-{second}-{third}")
-                                
-                                odds_data = extract_ticket_odds(page, race_id, tickets)
-                                
-                                ticket_evaluations = []
-                                for t in tickets:
-                                    w1, w2, w3 = t.split('-')
-                                    # 調子スコアではなく、新しい「総合期待度」をベースに買い目を評価する
-                                    s1 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w1), 0)
-                                    s2 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w2), 0)
-                                    s3 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w3), 0)
+                                race_evaluations = []
+                                for p_data in players:
+                                    name = p_data['name']
+                                    waku = p_data['waku']
+                                    score_val = float(p_data['score']) if p_data['score'] != "---.--" else 40.0
+                                    target_races = past_results_data.get(name, [])
+                                    condition_score = calculate_condition_score(target_races)
                                     
-                                    base_score = s1 + s2 + s3
-                                    bonus = 100000 if (w1_bonus_waku and w1 == w1_bonus_waku) else 0
-                                    expected_score = base_score + bonus
-                                    
-                                    ticket_evaluations.append({
-                                        'ticket': t,
-                                        'expected_score': expected_score,
-                                        'display_score': base_score,
-                                        'has_bonus': bonus > 0,
-                                        'odds': odds_data.get(t, 0.0),
-                                        's1': s1, 's2': s2, 's3': s3
+                                    race_evaluations.append({
+                                        '車番': waku,
+                                        '選手名': name,
+                                        '競走得点': score_val,
+                                        '調子スコア': condition_score,
+                                        'raw_waku': waku,
+                                        'raw_cond': condition_score
                                     })
                                 
-                                ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
-                                
-                                total_budget = 1200
-                                target_payout = total_budget * 1.5
-                                
-                                ev_dict = {ev['ticket']: ev for ev in ticket_evaluations}
-                                active_tickets = [ev['ticket'] for ev in ticket_evaluations]
-                                bets = {t: 100 for t in active_tickets}
-                                
-                                while True:
-                                    under_target_tickets = [t for t in active_tickets if ev_dict[t]['odds'] > 0 and (bets[t] * ev_dict[t]['odds']) < target_payout]
-                                    if not under_target_tickets: break
-                                    if len(active_tickets) <= 1: break
-                                        
-                                    lowest_ticket = active_tickets.pop()
-                                    freed_funds = bets[lowest_ticket]
-                                    del bets[lowest_ticket]
+                                # --- 独自の「ギャップ理論」を組み込む ---
+                                race_evaluations.sort(key=lambda x: x['競走得点'], reverse=True)
+                                for rank, p in enumerate(race_evaluations, 1):
+                                    p['得点順位'] = rank
                                     
-                                    while freed_funds > 0:
-                                        current_under_target = [t for t in active_tickets if ev_dict[t]['odds'] > 0 and (bets[t] * ev_dict[t]['odds']) < target_payout]
-                                        if current_under_target:
-                                            target = min(current_under_target, key=lambda t: bets[t] * ev_dict[t]['odds'])
-                                            bets[target] += 100
-                                            freed_funds -= 100
-                                        else:
-                                            bets[active_tickets[0]] += freed_funds
-                                            freed_funds = 0
+                                race_evaluations.sort(key=lambda x: x['調子スコア'], reverse=True)
+                                for rank, p in enumerate(race_evaluations, 1):
+                                    p['勢いギャップ'] = p['得点順位'] - rank 
+                                    p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ'] * 5.0), 2)
 
-                                # Streamlit用のデータフレーム作成（資金配分データ）
-                                result_rows = []
-                                for rank, ev in enumerate(ticket_evaluations, 1):
-                                    t = ev['ticket']
-                                    odds_val = ev['odds']
-                                    odds_str = f"{odds_val}倍" if odds_val > 0 else "取得失敗"
-                                    score_str = f"{ev['display_score']:.2f}"
-                                    if ev['has_bonus']:
-                                        score_str += " ★"
+                                race_evaluations.sort(key=lambda x: x['総合期待度'], reverse=True)
+                                
+                                df_players = pd.DataFrame(race_evaluations)
+                                df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
+                                st.write("▼ 出走選手データ (総合期待度順：実力と勢いのギャップを加味)")
+                                st.dataframe(df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']], hide_index=True)
+                                
+                                tickets = []
+                                if len(race_evaluations) >= 5:
+                                    top_players = race_evaluations[:5] 
+                                    top5_waku = [str(p['raw_waku']) for p in top_players]
+                                    first_place = top5_waku[:2]
+                                    second_place = top5_waku[:3]
+                                    third_place = top5_waku[:5]
                                     
-                                    if t in active_tickets:
-                                        bet = bets[t]
-                                        payout = bet * odds_val if odds_val > 0 else 0
-                                        payout_str = f"¥{payout:,.0f}" if odds_val > 0 else "-"
-                                        if odds_val > 0 and payout < target_payout:
-                                            payout_str += " (未達)"
+                                    w1_bonus_waku = None
+                                    if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15:
+                                        w1_bonus_waku = str(top_players[0]['raw_waku'])
+                                    
+                                    for first in first_place:
+                                        for second in second_place:
+                                            if first == second: continue
+                                            for third in third_place:
+                                                if first == third or second == third: continue
+                                                tickets.append(f"{first}-{second}-{third}")
+                                    
+                                    odds_data = extract_ticket_odds(page, race_id, tickets)
+                                    
+                                    ticket_evaluations = []
+                                    for t in tickets:
+                                        w1, w2, w3 = t.split('-')
+                                        s1 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w1), 0)
+                                        s2 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w2), 0)
+                                        s3 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w3), 0)
                                         
-                                        result_rows.append({
-                                            "優先順位": f"{rank}位",
-                                            "買い目": t,
-                                            "調子期待値": score_str,
-                                            "現在オッズ": odds_str,
-                                            "購入額": f"¥{bet}",
-                                            "払戻見込": payout_str
+                                        base_score = s1 + s2 + s3
+                                        bonus = 100000 if (w1_bonus_waku and w1 == w1_bonus_waku) else 0
+                                        expected_score = base_score + bonus
+                                        
+                                        ticket_evaluations.append({
+                                            'ticket': t,
+                                            'expected_score': expected_score,
+                                            'display_score': base_score,
+                                            'has_bonus': bonus > 0,
+                                            'odds': odds_data.get(t, 0.0),
+                                            's1': s1, 's2': s2, 's3': s3
                                         })
-                                    else:
-                                        result_rows.append({
-                                            "優先順位": f"{rank}位",
-                                            "買い目": t,
-                                            "調子期待値": score_str,
-                                            "現在オッズ": odds_str,
-                                            "購入額": "削除",
-                                            "払戻見込": "-"
-                                        })
-                                
-                                df_results = pd.DataFrame(result_rows)
-                                st.write("▼ 資金配分 (目標回収率150% / 1800円)")
-                                st.dataframe(df_results, hide_index=True)
-                                st.divider() # 区切り線
-                                
+                                    
+                                    ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
+                                    
+                                    total_budget = 1200
+                                    target_payout = total_budget * 1.5
+                                    
+                                    ev_dict = {ev['ticket']: ev for ev in ticket_evaluations}
+                                    active_tickets = [ev['ticket'] for ev in ticket_evaluations]
+                                    bets = {t: 100 for t in active_tickets}
+                                    
+                                    while True:
+                                        under_target_tickets = [t for t in active_tickets if ev_dict[t]['odds'] > 0 and (bets[t] * ev_dict[t]['odds']) < target_payout]
+                                        if not under_target_tickets: break
+                                        if len(active_tickets) <= 1: break
+                                            
+                                        lowest_ticket = active_tickets.pop()
+                                        freed_funds = bets[lowest_ticket]
+                                        del bets[lowest_ticket]
+                                        
+                                        while freed_funds > 0:
+                                            current_under_target = [t for t in active_tickets if ev_dict[t]['odds'] > 0 and (bets[t] * ev_dict[t]['odds']) < target_payout]
+                                            if current_under_target:
+                                                target = min(current_under_target, key=lambda t: bets[t] * ev_dict[t]['odds'])
+                                                bets[target] += 100
+                                                freed_funds -= 100
+                                            else:
+                                                bets[active_tickets[0]] += freed_funds
+                                                freed_funds = 0
+
+                                    result_rows = []
+                                    for rank, ev in enumerate(ticket_evaluations, 1):
+                                        t = ev['ticket']
+                                        odds_val = ev['odds']
+                                        odds_str = f"{odds_val}倍" if odds_val > 0 else "取得失敗"
+                                        score_str = f"{ev['display_score']:.2f}"
+                                        if ev['has_bonus']:
+                                            score_str += " ★"
+                                        
+                                        if t in active_tickets:
+                                            bet = bets[t]
+                                            payout = bet * odds_val if odds_val > 0 else 0
+                                            payout_str = f"¥{payout:,.0f}" if odds_val > 0 else "-"
+                                            if odds_val > 0 and payout < target_payout:
+                                                payout_str += " (未達)"
+                                            
+                                            result_rows.append({
+                                                "優先順位": f"{rank}位",
+                                                "買い目": t,
+                                                "調子期待値": score_str,
+                                                "現在オッズ": odds_str,
+                                                "購入額": f"¥{bet}",
+                                                "払戻見込": payout_str
+                                            })
+                                        else:
+                                            result_rows.append({
+                                                "優先順位": f"{rank}位",
+                                                "買い目": t,
+                                                "調子期待値": score_str,
+                                                "現在オッズ": odds_str,
+                                                "購入額": "削除",
+                                                "払戻見込": "-"
+                                            })
+                                    
+                                    df_results = pd.DataFrame(result_rows)
+                                    st.write("▼ 資金配分 (目標回収率150% / 1800円)")
+                                    st.dataframe(df_results, hide_index=True)
+                                    
                         time.sleep(1)
                         
             except Exception as e:
