@@ -357,7 +357,7 @@ if st.button("🚀 本日のレースデータを取得開始"):
                             player_names = [p['name'] for p in players]
                             past_results_data = extract_past_results(page, results_url, player_names)
                             
-                            race_evaluations = []
+race_evaluations = []
                             for p_data in players:
                                 name = p_data['name']
                                 waku = p_data['waku']
@@ -374,24 +374,43 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                     'raw_cond': condition_score
                                 })
                             
-                            race_evaluations.sort(key=lambda x: x['raw_cond'], reverse=True)
+                            # --- 独自の「ギャップ理論」を組み込む ---
+                            # 1. 競走得点の順位を出す
+                            race_evaluations.sort(key=lambda x: x['競走得点'], reverse=True)
+                            for rank, p in enumerate(race_evaluations, 1):
+                                p['得点順位'] = rank
+                                
+                            # 2. 調子スコアの順位を出す
+                            race_evaluations.sort(key=lambda x: x['調子スコア'], reverse=True)
+                            for rank, p in enumerate(race_evaluations, 1):
+                                # 得点順位(人気)より調子順位(実力)が上ならプラスになる（例: 得点6位 - 調子2位 = +4）
+                                p['勢いギャップ'] = p['得点順位'] - rank 
+                                
+                                # 3. 買い目選定のための「総合期待度」を算出（ギャップをボーナス加点）
+                                # ※係数の5.0は、ギャップ1につき調子スコア5pt分の価値を持たせるという調整値です
+                                p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ'] * 5.0), 2)
+
+                            # 総合期待度が高い順に並び替え
+                            race_evaluations.sort(key=lambda x: x['総合期待度'], reverse=True)
                             
                             # Streamlit用のデータフレーム作成（選手データ）
                             df_players = pd.DataFrame(race_evaluations)
                             df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
-                            st.write("▼ 出走選手データ (調子スコア順)")
-                            st.dataframe(df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア']], hide_index=True)
+                            st.write("▼ 出走選手データ (総合期待度順：実力と勢いのギャップを加味)")
+                            
+                            # 画面にギャップと総合期待度を表示
+                            st.dataframe(df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']], hide_index=True)
                             
                             tickets = []
                             if len(race_evaluations) >= 5:
-                                top_players = race_evaluations[:5]
+                                top_players = race_evaluations[:5] # 「総合期待度」の上位5名を選ぶ
                                 top5_waku = [str(p['raw_waku']) for p in top_players]
                                 first_place = top5_waku[:2]
                                 second_place = top5_waku[:3]
                                 third_place = top5_waku[:5]
                                 
                                 w1_bonus_waku = None
-                                if (top_players[0]['raw_cond'] - top_players[1]['raw_cond']) >= 15:
+                                if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15:
                                     w1_bonus_waku = str(top_players[0]['raw_waku'])
                                 
                                 for first in first_place:
@@ -406,9 +425,10 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                 ticket_evaluations = []
                                 for t in tickets:
                                     w1, w2, w3 = t.split('-')
-                                    s1 = next((p['raw_cond'] for p in race_evaluations if str(p['raw_waku']) == w1), 0)
-                                    s2 = next((p['raw_cond'] for p in race_evaluations if str(p['raw_waku']) == w2), 0)
-                                    s3 = next((p['raw_cond'] for p in race_evaluations if str(p['raw_waku']) == w3), 0)
+                                    # 調子スコアではなく、新しい「総合期待度」をベースに買い目を評価する
+                                    s1 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w1), 0)
+                                    s2 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w2), 0)
+                                    s3 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w3), 0)
                                     
                                     base_score = s1 + s2 + s3
                                     bonus = 100000 if (w1_bonus_waku and w1 == w1_bonus_waku) else 0
@@ -422,7 +442,6 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                         'odds': odds_data.get(t, 0.0),
                                         's1': s1, 's2': s2, 's3': s3
                                     })
-                                
                                 ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
                                 
                                 total_budget = 1200
