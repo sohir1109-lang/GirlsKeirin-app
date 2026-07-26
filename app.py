@@ -306,10 +306,40 @@ def extract_ticket_odds(page, race_id, tickets):
         return result;
     }''', tickets)
 
+# ==========================================
+# データフレームの色付け用関数（スタイル設定）
+# ==========================================
+def style_players(row):
+    styles = [''] * len(row)
+    # 1〜3位の背景をメダルカラーに
+    if row['想定順位'] == '1位': styles[0] = 'background-color: #FFF2CC; color: #B8860B; font-weight: bold;'
+    elif row['想定順位'] == '2位': styles[0] = 'background-color: #F2F2F2; color: #708090; font-weight: bold;'
+    elif row['想定順位'] == '3位': styles[0] = 'background-color: #FCE5CD; color: #A0522D; font-weight: bold;'
+    
+    # 勢いギャップの色（プラスは赤、マイナスは青）
+    try:
+        gap = float(row['勢いギャップ'])
+        if gap > 0:
+            styles[5] = 'color: #D32F2F; font-weight: bold;'
+        elif gap < 0:
+            styles[5] = 'color: #1976D2;'
+    except:
+        pass
+    return styles
+
+def style_bets(row):
+    styles = [''] * len(row)
+    # 削除された行は全体をグレーアウト
+    if row['購入額'] == '削除':
+        return ['color: #B0BEC5;'] * len(row)
+    else:
+        styles[1] = 'font-weight: bold;' # 買い目
+        styles[4] = 'color: #D32F2F; font-weight: bold;' # 購入額（赤）
+        styles[5] = 'color: #388E3C; font-weight: bold;' # 払戻見込（緑）
+    return styles
+
 # --- StreamlitのUI設定 ---
-# サイトの表示名を「ガールズケイリン予想システム」に変更
 st.set_page_config(page_title="ガールズケイリン予想システム", page_icon="🚴‍♀️", layout="wide")
-# ページのタイトルを「ガールズケイリン予想＆資金配分システム」に変更
 st.title("🚴‍♀️ ガールズケイリン予想＆資金配分システム")
 
 if st.button("🚀 本日のレースデータを取得開始"):
@@ -354,7 +384,6 @@ if st.button("🚀 本日のレースデータを取得開始"):
                             if entry_data['venue_name']:
                                 current_venue_name = entry_data['venue_name']
                                 
-                            # ここからが「折りたたみ」の表示ブロックです
                             with st.expander(f"🏆 【{current_venue_name}】 {i}R (L級)", expanded=False):
                                 players = entry_data['players']
                                 player_names = [p['name'] for p in players]
@@ -377,7 +406,7 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                         'raw_cond': condition_score
                                     })
                                 
-                                # --- 独自の「ギャップ理論」を組み込む ---
+                                # --- ギャップ理論の計算 ---
                                 race_evaluations.sort(key=lambda x: x['競走得点'], reverse=True)
                                 for rank, p in enumerate(race_evaluations, 1):
                                     p['得点順位'] = rank
@@ -385,16 +414,18 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                 race_evaluations.sort(key=lambda x: x['調子スコア'], reverse=True)
                                 for rank, p in enumerate(race_evaluations, 1):
                                     p['勢いギャップ'] = p['得点順位'] - rank 
-                                    
-                                    # 勢いギャップの係数を 5.0 から 3.0 に変更
                                     p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ'] * 3.0), 2)
 
                                 race_evaluations.sort(key=lambda x: x['総合期待度'], reverse=True)
                                 
                                 df_players = pd.DataFrame(race_evaluations)
                                 df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
-                                st.write("▼ 出走選手データ (総合期待度順：実力と勢いのギャップを加味)")
-                                st.dataframe(df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']], hide_index=True)
+                                
+                                st.markdown("##### 🚴‍♀️ 出走選手データ (総合期待度順)")
+                                
+                                # 選手データ表にスタイルを適用
+                                styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
+                                st.dataframe(styled_players, hide_index=True, use_container_width=True)
                                 
                                 tickets = []
                                 if len(race_evaluations) >= 5:
@@ -500,8 +531,11 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                             })
                                     
                                     df_results = pd.DataFrame(result_rows)
-                                    st.write("▼ 資金配分 (目標回収率150% / 1800円)")
-                                    st.dataframe(df_results, hide_index=True)
+                                    st.markdown("##### 💰 資金配分 (目標回収率150% / 1800円)")
+                                    
+                                    # 資金配分表にスタイルを適用
+                                    styled_results = df_results.style.apply(style_bets, axis=1)
+                                    st.dataframe(styled_results, hide_index=True, use_container_width=True)
                                     
                         time.sleep(1)
                         
