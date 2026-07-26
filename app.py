@@ -1,3 +1,5 @@
+import os
+os.system("playwright install chromium")
 import time
 import re
 import pandas as pd
