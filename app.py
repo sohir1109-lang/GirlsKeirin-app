@@ -314,15 +314,16 @@ if st.button("🚀 本日のレースデータを取得開始"):
     with st.spinner("スクレイピングを実行しています。数分かかる場合があります..."):
         with sync_playwright() as p:
             # クラウド化を見据えて headless=True に変更
-            browser = p.chromium.launch(
-               headless=True,
-               args=[
-                   "--disable-blink-features=AutomationControlled",
-                   "--no-sandbox",
-                   "--disable-setuid-sandbox",
-                   "--disable-dev-shm-usage"
-             ]
-           )
+# ↓ここから先頭のインデント（スペース）を揃えて書き換えてください
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage"
+            ]
+        )
             context = browser.new_context(viewport={"width": 1280, "height": 720}, ignore_https_errors=True)
             page = context.new_page()
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
