@@ -90,7 +90,24 @@ def extract_entry_data(page, entry_url):
             const placeEl = document.querySelector('.Race_Place');
             if (placeEl) venue = placeEl.innerText.trim();
         }
-        return { is_girls: isGirls, venue: venue };
+
+        // --- 発走時刻・締切時刻の取得 ---
+        let startTime = "";
+        let closeTime = "";
+        const pageText = document.body.innerText || "";
+        
+        const startMatch = pageText.match(/発走\s*(\d{1,2}:\d{2})/);
+        if (startMatch) startTime = startMatch[1];
+        
+        const closeMatch = pageText.match(/締切\s*(\d{1,2}:\d{2})/);
+        if (closeMatch) closeTime = closeMatch[1];
+
+        return { 
+            is_girls: isGirls, 
+            venue: venue,
+            start_time: startTime,
+            close_time: closeTime
+        };
     }''')
     if not info['is_girls']: return None
     page.wait_for_timeout(2000)
@@ -152,7 +169,12 @@ def extract_entry_data(page, entry_url):
         });
         return results;
     }''')
-    return { "venue_name": info['venue'], "players": players }
+    return { 
+        "venue_name": info['venue'], 
+        "start_time": info['start_time'], 
+        "close_time": info['close_time'], 
+        "players": players 
+    }
 
 def extract_past_results(page, results_url, player_names):
     page.goto(results_url, timeout=30000, wait_until="domcontentloaded")
@@ -335,6 +357,8 @@ def run_heavy_scraping():
                             "race_id": race_id,
                             "venue_name": current_venue_name,
                             "race_num": i,
+                            "start_time": entry_data.get('start_time', ''),
+                            "close_time": entry_data.get('close_time', ''),
                             "evaluations": race_evaluations
                         })
                         time.sleep(1)
@@ -344,7 +368,6 @@ def run_heavy_scraping():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(scraped_data, f, ensure_ascii=False, indent=2)
 
-# GitHub Actionsからのコマンド実行用
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--scrape":
         print("Starting heavy scraping batch...")
@@ -396,9 +419,9 @@ if os.path.exists(DATA_FILE):
 
 if data is None:
     st.warning(f"本日 ({today_str}) の出走表データがまだ準備されていません。")
-    st.info("💡 7:00以前に予想を確認したい場合や、データが存在しない場合は下のボタンから手動で生成できます。（数分かかります）")
+    st.info("💡 朝7:00以前に確認したい場合やデータ未作成時は、下のボタンから手動で出走表を取得・生成できます。")
     if st.button("🚀 手動で本日の出走表を取得・予想作成"):
-        with st.spinner("出走表と過去成績を取得・計算しています。画面を暗くせずに数分お待ちください..."):
+        with st.spinner("出走表と過去成績を取得・計算しています。数分お待ちください..."):
             try:
                 run_heavy_scraping()
                 st.success("取得が完了しました！画面を更新します。")
@@ -415,7 +438,20 @@ else:
         r_id = race['race_id']
         evals = race['evaluations']
         
-        with st.expander(f"🏆 【{venue}】 {r_num}R (L級)", expanded=False):
+        # 発走時刻と締切時刻の表示フォーマット調整
+        s_time = race.get('start_time', '')
+        c_time = race.get('close_time', '')
+        time_info_str = ""
+        if s_time or c_time:
+            time_parts = []
+            if s_time: time_parts.append(f"発走 {s_time}")
+            if c_time: time_parts.append(f"締切 {c_time}")
+            time_info_str = f" ｜ ⏰ {' / '.join(time_parts)}"
+            
+        # レースタイトルの折りたたみバーに「発走・締切時刻」を追加
+        expander_title = f"🏆 【{venue}】 {r_num}R (L級){time_info_str}"
+        
+        with st.expander(expander_title, expanded=False):
             df_players = pd.DataFrame(evals)
             df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
             
