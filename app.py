@@ -311,12 +311,10 @@ def extract_ticket_odds(page, race_id, tickets):
 # ==========================================
 def style_players(row):
     styles = [''] * len(row)
-    # 1〜3位の背景をメダルカラーに
     if row['想定順位'] == '1位': styles[0] = 'background-color: #FFF2CC; color: #B8860B; font-weight: bold;'
     elif row['想定順位'] == '2位': styles[0] = 'background-color: #F2F2F2; color: #708090; font-weight: bold;'
     elif row['想定順位'] == '3位': styles[0] = 'background-color: #FCE5CD; color: #A0522D; font-weight: bold;'
     
-    # 勢いギャップの色（プラスは赤、マイナスは青）
     try:
         gap = float(row['勢いギャップ'])
         if gap > 0:
@@ -329,13 +327,12 @@ def style_players(row):
 
 def style_bets(row):
     styles = [''] * len(row)
-    # 削除された行は全体をグレーアウト
     if row['購入額'] == '削除':
         return ['color: #B0BEC5;'] * len(row)
     else:
-        styles[1] = 'font-weight: bold;' # 買い目
-        styles[4] = 'color: #D32F2F; font-weight: bold;' # 購入額（赤）
-        styles[5] = 'color: #388E3C; font-weight: bold;' # 払戻見込（緑）
+        styles[1] = 'font-weight: bold;'
+        styles[4] = 'color: #D32F2F; font-weight: bold;'
+        styles[5] = 'color: #388E3C; font-weight: bold;'
     return styles
 
 # --- StreamlitのUI設定 ---
@@ -414,7 +411,7 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                 race_evaluations.sort(key=lambda x: x['調子スコア'], reverse=True)
                                 for rank, p in enumerate(race_evaluations, 1):
                                     p['勢いギャップ'] = p['得点順位'] - rank 
-                                    p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ'] * 3.0), 2)
+                                    p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ * 3.0'] if '勢いギャップ * 3.0' in p else p['勢いギャップ'] * 3.0), 2)
 
                                 race_evaluations.sort(key=lambda x: x['総合期待度'], reverse=True)
                                 
@@ -422,8 +419,6 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                 df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
                                 
                                 st.markdown("##### 🚴‍♀️ 出走選手データ (総合期待度順)")
-                                
-                                # 選手データ表にスタイルを適用
                                 styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
                                 st.dataframe(styled_players, hide_index=True, use_container_width=True)
                                 
@@ -435,9 +430,24 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                     second_place = top5_waku[:3]
                                     third_place = top5_waku[:5]
                                     
+                                    # ==========================================
+                                    # 【新機能】スコア差15以上によるボーナス判定
+                                    # ==========================================
+                                    # 1着候補の差が15以上なら1位にボーナス
                                     w1_bonus_waku = None
                                     if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15:
                                         w1_bonus_waku = str(top_players[0]['raw_waku'])
+                                    
+                                    # 2着候補（2位と3位）の差が15以上なら2位にボーナス
+                                    w2_bonus_waku = None
+                                    if len(top_players) >= 3 and (top_players[1]['総合期待度'] - top_players[2]['総合期待度']) >= 15:
+                                        w2_bonus_waku = str(top_players[1]['raw_waku'])
+                                        
+                                    # 3着候補（3位と4位）の差が15以上なら3位にボーナス
+                                    w3_bonus_waku = None
+                                    if len(top_players) >= 4 and (top_players[2]['総合期待度'] - top_players[3]['総合期待度']) >= 15:
+                                        w3_bonus_waku = str(top_players[2]['raw_waku'])
+                                    # ==========================================
                                     
                                     for first in first_place:
                                         for second in second_place:
@@ -456,14 +466,24 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                         s3 = next((p['総合期待度'] for p in race_evaluations if str(p['raw_waku']) == w3), 0)
                                         
                                         base_score = s1 + s2 + s3
-                                        bonus = 100000 if (w1_bonus_waku and w1 == w1_bonus_waku) else 0
+                                        
+                                        # 各ポジションのボーナスを加算（差が15以上離れている選手を強く押し上げる）
+                                        bonus = 0
+                                        if w1_bonus_waku and w1 == w1_bonus_waku:
+                                            bonus += 100000
+                                        if w2_bonus_waku and w2 == w2_bonus_waku:
+                                            bonus += 50000
+                                        if w3_bonus_waku and w3 == w3_bonus_waku:
+                                            bonus += 25000
+                                            
                                         expected_score = base_score + bonus
+                                        has_bonus = bonus > 0
                                         
                                         ticket_evaluations.append({
                                             'ticket': t,
                                             'expected_score': expected_score,
                                             'display_score': base_score,
-                                            'has_bonus': bonus > 0,
+                                            'has_bonus': has_bonus,
                                             'odds': odds_data.get(t, 0.0),
                                             's1': s1, 's2': s2, 's3': s3
                                         })
@@ -532,8 +552,6 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                     
                                     df_results = pd.DataFrame(result_rows)
                                     st.markdown("##### 💰 資金配分 (目標回収率150% / 1800円)")
-                                    
-                                    # 資金配分表にスタイルを適用
                                     styled_results = df_results.style.apply(style_bets, axis=1)
                                     st.dataframe(styled_results, hide_index=True, use_container_width=True)
                                     
