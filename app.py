@@ -494,7 +494,7 @@ else:
                     st.session_state[f"mode_{r_id}"] = "tickets"
             with col2:
                 if st.button(f"📊 オッズ取得＆資金配分", key=f"btn_odds_{r_id}"):
-                    with st.spinner("オッズを取得中... (約3秒)"):
+                    with st.spinner("オッズを取得中... (約5秒)"):
                         try:
                             ticket_evals = generate_ticket_evaluations(evals)
                             tickets = [ev['ticket'] for ev in ticket_evals]
