@@ -53,6 +53,48 @@ def calculate_condition_score(past_races):
     if valid_race_count == 0: return 0.0
     return round(total_score / valid_race_count, 2)
 
+# ==========================================
+# 買い目生成ロジックの共通化（軽量化のため独立）
+# ==========================================
+def generate_ticket_evaluations(evals):
+    tickets = []
+    if len(evals) < 5: return []
+    
+    top_players = evals[:5] 
+    top5_waku = [str(p['raw_waku']) for p in top_players]
+    
+    w1_bonus_waku = str(top_players[0]['raw_waku']) if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15 else None
+    w2_bonus_waku = str(top_players[1]['raw_waku']) if len(top_players) >= 3 and (top_players[1]['総合期待度'] - top_players[2]['総合期待度']) >= 15 else None
+    w3_bonus_waku = str(top_players[2]['raw_waku']) if len(top_players) >= 4 and (top_players[2]['総合期待度'] - top_players[3]['総合期待度']) >= 15 else None
+    
+    for first in top5_waku[:2]:
+        for second in top5_waku[:3]:
+            if first == second: continue
+            for third in top5_waku[:5]:
+                if first == third or second == third: continue
+                tickets.append(f"{first}-{second}-{third}")
+    
+    ticket_evaluations = []
+    for t in tickets:
+        w1, w2, w3 = t.split('-')
+        s1 = next((p['総合期待度'] for p in evals if str(p['raw_waku']) == w1), 0)
+        s2 = next((p['総合期待度'] for p in evals if str(p['raw_waku']) == w2), 0)
+        s3 = next((p['総合期待度'] for p in evals if str(p['raw_waku']) == w3), 0)
+        base_score = s1 + s2 + s3
+        
+        bonus = 0
+        if w1_bonus_waku and w1 == w1_bonus_waku: bonus += 100000
+        if w2_bonus_waku and w2 == w2_bonus_waku: bonus += 50000
+        if w3_bonus_waku and w3 == w3_bonus_waku: bonus += 25000
+        
+        ticket_evaluations.append({
+            'ticket': t, 'expected_score': base_score + bonus, 'display_score': base_score,
+            'has_bonus': bonus > 0, 's1': s1, 's2': s2, 's3': s3
+        })
+    
+    ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
+    return ticket_evaluations
+
 def get_girls_venue_urls(page, schedule_url):
     page.goto(schedule_url, timeout=60000, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
@@ -90,24 +132,16 @@ def extract_entry_data(page, entry_url):
             const placeEl = document.querySelector('.Race_Place');
             if (placeEl) venue = placeEl.innerText.trim();
         }
-
-        // --- 発走時刻・締切時刻の取得 ---
+        
         let startTime = "";
         let closeTime = "";
         const pageText = document.body.innerText || "";
-        
         const startMatch = pageText.match(/発走\s*(\d{1,2}:\d{2})/);
         if (startMatch) startTime = startMatch[1];
-        
         const closeMatch = pageText.match(/締切\s*(\d{1,2}:\d{2})/);
         if (closeMatch) closeTime = closeMatch[1];
 
-        return { 
-            is_girls: isGirls, 
-            venue: venue,
-            start_time: startTime,
-            close_time: closeTime
-        };
+        return { is_girls: isGirls, venue: venue, start_time: startTime, close_time: closeTime };
     }''')
     if not info['is_girls']: return None
     page.wait_for_timeout(2000)
@@ -169,12 +203,7 @@ def extract_entry_data(page, entry_url):
         });
         return results;
     }''')
-    return { 
-        "venue_name": info['venue'], 
-        "start_time": info['start_time'], 
-        "close_time": info['close_time'], 
-        "players": players 
-    }
+    return { "venue_name": info['venue'], "start_time": info['start_time'], "close_time": info['close_time'], "players": players }
 
 def extract_past_results(page, results_url, player_names):
     page.goto(results_url, timeout=30000, wait_until="domcontentloaded")
@@ -370,9 +399,7 @@ def run_heavy_scraping():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--scrape":
-        print("Starting heavy scraping batch...")
         run_heavy_scraping()
-        print("Data saved successfully.")
         sys.exit(0)
 
 # ==========================================
@@ -398,6 +425,9 @@ def style_bets(row):
         styles[4] = 'color: #D32F2F; font-weight: bold;'
         styles[5] = 'color: #388E3C; font-weight: bold;'
     return styles
+
+def style_pre(row):
+    return [''] + ['font-weight: bold;'] + ['']
 
 # ==========================================
 # Streamlit UI
@@ -438,7 +468,6 @@ else:
         r_id = race['race_id']
         evals = race['evaluations']
         
-        # 発走時刻と締切時刻の表示フォーマット調整
         s_time = race.get('start_time', '')
         c_time = race.get('close_time', '')
         time_info_str = ""
@@ -448,10 +477,7 @@ else:
             if c_time: time_parts.append(f"締切 {c_time}")
             time_info_str = f" ｜ ⏰ {' / '.join(time_parts)}"
             
-        # レースタイトルの折りたたみバーに「発走・締切時刻」を追加
-        expander_title = f"🏆 【{venue}】 {r_num}R (L級){time_info_str}"
-        
-        with st.expander(expander_title, expanded=False):
+        with st.expander(f"🏆 【{venue}】 {r_num}R (L級){time_info_str}", expanded=False):
             df_players = pd.DataFrame(evals)
             df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
             
@@ -459,25 +485,17 @@ else:
             styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
             st.dataframe(styled_players, hide_index=True, use_container_width=True)
             
-            btn_key = f"btn_odds_{r_id}"
-            if st.button(f"📊 最新オッズを取得して資金配分を計算 ({venue}{r_num}R)", key=btn_key):
-                with st.spinner("オッズを取得中... (約3秒)"):
-                    try:
-                        tickets = []
-                        if len(evals) >= 5:
-                            top_players = evals[:5] 
-                            top5_waku = [str(p['raw_waku']) for p in top_players]
-                            
-                            w1_bonus_waku = str(top_players[0]['raw_waku']) if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15 else None
-                            w2_bonus_waku = str(top_players[1]['raw_waku']) if len(top_players) >= 3 and (top_players[1]['総合期待度'] - top_players[2]['総合期待度']) >= 15 else None
-                            w3_bonus_waku = str(top_players[2]['raw_waku']) if len(top_players) >= 4 and (top_players[2]['総合期待度'] - top_players[3]['総合期待度']) >= 15 else None
-                            
-                            for first in top5_waku[:2]:
-                                for second in top5_waku[:3]:
-                                    if first == second: continue
-                                    for third in top5_waku[:5]:
-                                        if first == third or second == third: continue
-                                        tickets.append(f"{first}-{second}-{third}")
+            # --- 2つのボタンを横並びに配置 ---
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button(f"🎯 買い目を事前確認", key=f"btn_tic_{r_id}"):
+                    st.session_state[f"mode_{r_id}"] = "tickets"
+            with col2:
+                if st.button(f"📊 オッズ取得＆資金配分", key=f"btn_odds_{r_id}"):
+                    with st.spinner("オッズを取得中... (約3秒)"):
+                        try:
+                            ticket_evals = generate_ticket_evaluations(evals)
+                            tickets = [ev['ticket'] for ev in ticket_evals]
                             
                             with sync_playwright() as p:
                                 browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
@@ -487,30 +505,13 @@ else:
                                 odds_data = extract_ticket_odds(page, r_id, tickets)
                                 browser.close()
                                 
-                            ticket_evaluations = []
-                            for t in tickets:
-                                w1, w2, w3 = t.split('-')
-                                s1 = next((p['総合期待度'] for p in evals if str(p['raw_waku']) == w1), 0)
-                                s2 = next((p['総合期待度'] for p in evals if str(p['raw_waku']) == w2), 0)
-                                s3 = next((p['総合期待度'] for p in evals if str(p['raw_waku']) == w3), 0)
-                                base_score = s1 + s2 + s3
+                            for ev in ticket_evals:
+                                ev['odds'] = odds_data.get(ev['ticket'], 0.0)
                                 
-                                bonus = 0
-                                if w1_bonus_waku and w1 == w1_bonus_waku: bonus += 100000
-                                if w2_bonus_waku and w2 == w2_bonus_waku: bonus += 50000
-                                if w3_bonus_waku and w3 == w3_bonus_waku: bonus += 25000
-                                
-                                ticket_evaluations.append({
-                                    'ticket': t, 'expected_score': base_score + bonus, 'display_score': base_score,
-                                    'has_bonus': bonus > 0, 'odds': odds_data.get(t, 0.0), 's1': s1, 's2': s2, 's3': s3
-                                })
-                            
-                            ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
-                            
                             total_budget = 1200
                             target_payout = total_budget * 1.5
-                            valid_tickets = [ev['ticket'] for ev in ticket_evaluations if ev['odds'] > 0]
-                            ev_dict = {ev['ticket']: ev for ev in ticket_evaluations}
+                            valid_tickets = [ev['ticket'] for ev in ticket_evals if ev['odds'] > 0]
+                            ev_dict = {ev['ticket']: ev for ev in ticket_evals}
                             
                             max_k = min(len(valid_tickets), total_budget // 100)
                             best_bets = {}
@@ -532,7 +533,7 @@ else:
                                         break
 
                             result_rows = []
-                            for rank, ev in enumerate(ticket_evaluations, 1):
+                            for rank, ev in enumerate(ticket_evals, 1):
                                 t = ev['ticket']
                                 odds_val = ev['odds']
                                 odds_str = f"{odds_val}倍" if odds_val > 0 else "取得失敗"
@@ -547,10 +548,25 @@ else:
                                     result_rows.append({"優先順位": f"{rank}位", "買い目": t, "調子期待値": score_str, "現在オッズ": odds_str, "購入額": "見送り", "払戻見込": "-"})
                             
                             st.session_state[f"result_{r_id}"] = pd.DataFrame(result_rows)
-                    except Exception as e:
-                        st.error(f"オッズ取得でエラーが発生しました: {e}")
+                            st.session_state[f"mode_{r_id}"] = "odds"
+                        except Exception as e:
+                            st.error(f"オッズ取得でエラーが発生しました: {e}")
 
-            if f"result_{r_id}" in st.session_state:
-                st.markdown("##### 💰 資金配分 (バランス分散型 / 1200円)")
+            # --- ボタンによって表示内容を切り替え ---
+            current_mode = st.session_state.get(f"mode_{r_id}")
+            
+            if current_mode == "tickets":
+                ticket_evals = generate_ticket_evaluations(evals)
+                result_rows = []
+                for rank, ev in enumerate(ticket_evals, 1):
+                    score_str = f"{ev['display_score']:.2f}" + (" ★" if ev['has_bonus'] else "")
+                    result_rows.append({"優先順位": f"{rank}位", "買い目": ev['ticket'], "調子期待値": score_str})
+                df_tickets = pd.DataFrame(result_rows)
+                
+                st.markdown("##### 🎯 買い目候補 (オッズ取得前)")
+                st.dataframe(df_tickets.style.apply(style_pre, axis=1), hide_index=True, use_container_width=True)
+                
+            elif current_mode == "odds" and f"result_{r_id}" in st.session_state:
+                st.markdown(f"##### 💰 資金配分 (目標回収率150% / {total_budget}円)")
                 styled_results = st.session_state[f"result_{r_id}"].style.apply(style_bets, axis=1)
                 st.dataframe(styled_results, hide_index=True, use_container_width=True)
