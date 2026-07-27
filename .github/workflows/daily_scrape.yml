@@ -1,0 +1,38 @@
+name: 毎朝7時の出走表自動取得
+
+on:
+  schedule:
+    # UTC（世界標準時）の22時は、日本時間の朝7時です。
+    - cron: '0 22 * * *'
+  workflow_dispatch: # 手動でテスト実行するための設定
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v3
+
+      - name: Python環境のセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 必要なライブラリのインストール
+        run: |
+          pip install streamlit pandas playwright
+          playwright install chromium
+
+      - name: 出走表データのスクレイピング実行
+        run: python app.py --scrape
+
+      - name: 取得したデータをGitHubに保存
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add today_data.json
+          # 変更がある場合のみコミットしてプッシュする
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update daily race data" && git push)
