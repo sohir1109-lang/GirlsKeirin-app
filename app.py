@@ -24,7 +24,7 @@ def calculate_condition_score(past_races):
         time_weight = r['time_weight'] 
         
         if rank == 1: base_pt = 100
-        elif rank == 2: base_pt = 85 # ◀◀ 80点から85点に引き上げました
+        elif rank == 2: base_pt = 85
         elif rank == 3: base_pt = 70
         elif rank == 4: base_pt = 60
         elif rank == 5: base_pt = 40
@@ -306,9 +306,6 @@ def extract_ticket_odds(page, race_id, tickets):
         return result;
     }''', tickets)
 
-# ==========================================
-# データフレームの色付け用関数（スタイル設定）
-# ==========================================
 def style_players(row):
     styles = [''] * len(row)
     if row['想定順位'] == '1位': styles[0] = 'background-color: #FFF2CC; color: #B8860B; font-weight: bold;'
@@ -430,9 +427,6 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                     second_place = top5_waku[:3]
                                     third_place = top5_waku[:5]
                                     
-                                    # ==========================================
-                                    # 【ボーナス】スコア差15以上による評価上昇
-                                    # ==========================================
                                     w1_bonus_waku = None
                                     if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15:
                                         w1_bonus_waku = str(top_players[0]['raw_waku'])
@@ -483,28 +477,36 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                     ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
                                     
                                     total_budget = 1200
+                                    target_payout = total_budget * 1.5
                                     
-                                    # ==========================================
-                                    # 【資金配分】均等バランス調整ロジック
-                                    # ==========================================
-                                    active_tickets = [ev['ticket'] for ev in ticket_evaluations if ev['odds'] > 0]
-                                    if not active_tickets:
-                                        active_tickets = [ev['ticket'] for ev in ticket_evaluations[:6]] 
-                                    else:
-                                        active_tickets = active_tickets[:8] 
-                                        
+                                    valid_tickets = [ev['ticket'] for ev in ticket_evaluations if ev['odds'] > 0]
                                     ev_dict = {ev['ticket']: ev for ev in ticket_evaluations}
                                     
-                                    bets = {t: 100 for t in active_tickets}
-                                    remaining_budget = total_budget - (100 * len(active_tickets))
-                                    if remaining_budget < 0:
-                                        remaining_budget = 0
-                                        bets = {t: 100 for t in active_tickets[:12]}
-                                        
-                                    while remaining_budget >= 100:
-                                        lowest_t = min(active_tickets, key=lambda t: bets[t] * ev_dict[t]['odds'] if ev_dict[t]['odds'] > 0 else 999999)
-                                        bets[lowest_t] += 100
-                                        remaining_budget -= 100
+                                    max_k = min(len(valid_tickets), total_budget // 100)
+                                    best_bets = {}
+                                    active_tickets = []
+                                    
+                                    if max_k > 0:
+                                        # 買い目の点数を減らしながら、「全員が目標額を超え、かつ均等になる配分」を探す
+                                        for k in range(max_k, 0, -1):
+                                            current_active = valid_tickets[:k]
+                                            bets = {t: 100 for t in current_active}
+                                            remaining_budget = total_budget - (100 * k)
+                                            
+                                            # 残りの予算を、払戻金が一番低い買い目に足して均等化していく
+                                            while remaining_budget >= 100:
+                                                lowest_t = min(current_active, key=lambda t: bets[t] * ev_dict[t]['odds'])
+                                                bets[lowest_t] += 100
+                                                remaining_budget -= 100
+                                                
+                                            # 分配後の、全買い目の中での「最低払戻金額」をチェック
+                                            min_payout = min(bets[t] * ev_dict[t]['odds'] for t in current_active)
+                                            
+                                            # もし全買い目が目標額(150%)を達成しているか、買い目が1つしかなければ決定
+                                            if min_payout >= target_payout or k == 1:
+                                                best_bets = bets
+                                                active_tickets = current_active
+                                                break
 
                                     result_rows = []
                                     for rank, ev in enumerate(ticket_evaluations, 1):
@@ -515,11 +517,13 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                         if ev['has_bonus']:
                                             score_str += " ★"
                                         
-                                        if t in bets:
-                                            bet = bets[t]
+                                        if t in best_bets:
+                                            bet = best_bets[t]
                                             payout = bet * odds_val if odds_val > 0 else 0
                                             payout_str = f"¥{payout:,.0f}" if odds_val > 0 else "-"
-                                            
+                                            if odds_val > 0 and payout < target_payout:
+                                                payout_str += " (未達)"
+                                                
                                             result_rows.append({
                                                 "優先順位": f"{rank}位",
                                                 "買い目": t,
@@ -539,7 +543,7 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                             })
                                     
                                     df_results = pd.DataFrame(result_rows)
-                                    st.markdown("##### 💰 資金配分 (バランス分散型 / 1200円)")
+                                    st.markdown(f"##### 💰 資金配分 (目標回収率150% / {total_budget}円)")
                                     styled_results = df_results.style.apply(style_bets, axis=1)
                                     st.dataframe(styled_results, hide_index=True, use_container_width=True)
                                     
