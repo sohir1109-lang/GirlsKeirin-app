@@ -12,6 +12,7 @@ os.system("playwright install chromium")
 
 TODAY_SCHEDULE_URL = "https://keirin.netkeiba.com/race/?rf=navii"
 DATA_FILE = "today_data.json"
+TOTAL_BUDGET = 1200  # 予算を共通変数として定義
 JST = timezone(timedelta(hours=+9), 'JST')
 
 GRADE_WEIGHTS = {
@@ -483,7 +484,8 @@ else:
             
             st.markdown("##### 🚴‍♀️ 出走選手データ (総合期待度順)")
             styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
-            st.dataframe(styled_players, hide_index=True, use_container_width=True)
+            # 警告を出さないよう use_container_width パラメータを削除
+            st.dataframe(styled_players, hide_index=True)
             
             # --- 2つのボタンを横並びに配置 ---
             col1, col2 = st.columns([1, 1])
@@ -508,19 +510,18 @@ else:
                             for ev in ticket_evals:
                                 ev['odds'] = odds_data.get(ev['ticket'], 0.0)
                                 
-                            total_budget = 1200
-                            target_payout = total_budget * 1.5
+                            target_payout = TOTAL_BUDGET * 1.5
                             valid_tickets = [ev['ticket'] for ev in ticket_evals if ev['odds'] > 0]
                             ev_dict = {ev['ticket']: ev for ev in ticket_evals}
                             
-                            max_k = min(len(valid_tickets), total_budget // 100)
+                            max_k = min(len(valid_tickets), TOTAL_BUDGET // 100)
                             best_bets = {}
                             
                             if max_k > 0:
                                 for k in range(max_k, 0, -1):
                                     current_active = valid_tickets[:k]
                                     bets = {t: 100 for t in current_active}
-                                    remaining_budget = total_budget - (100 * k)
+                                    remaining_budget = TOTAL_BUDGET - (100 * k)
                                     
                                     while remaining_budget >= 100:
                                         lowest_t = min(current_active, key=lambda t: bets[t] * ev_dict[t]['odds'])
@@ -564,9 +565,9 @@ else:
                 df_tickets = pd.DataFrame(result_rows)
                 
                 st.markdown("##### 🎯 買い目候補 (オッズ取得前)")
-                st.dataframe(df_tickets.style.apply(style_pre, axis=1), hide_index=True, use_container_width=True)
+                st.dataframe(df_tickets.style.apply(style_pre, axis=1), hide_index=True)
                 
             elif current_mode == "odds" and f"result_{r_id}" in st.session_state:
-                st.markdown(f"##### 💰 資金配分 (目標回収率150% / {total_budget}円)")
+                st.markdown(f"##### 💰 資金配分 (目標回収率150% / {TOTAL_BUDGET}円)")
                 styled_results = st.session_state[f"result_{r_id}"].style.apply(style_bets, axis=1)
-                st.dataframe(styled_results, hide_index=True, use_container_width=True)
+                st.dataframe(styled_results, hide_index=True)
