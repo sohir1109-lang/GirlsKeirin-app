@@ -24,7 +24,7 @@ def calculate_condition_score(past_races):
         time_weight = r['time_weight'] 
         
         if rank == 1: base_pt = 100
-        elif rank == 2: base_pt = 80
+        elif rank == 2: base_pt = 85 # ◀◀ 80点から85点に引き上げました
         elif rank == 3: base_pt = 70
         elif rank == 4: base_pt = 60
         elif rank == 5: base_pt = 40
@@ -327,7 +327,7 @@ def style_players(row):
 
 def style_bets(row):
     styles = [''] * len(row)
-    if row['購入額'] == '削除':
+    if row['購入額'] == '見送り':
         return ['color: #B0BEC5;'] * len(row)
     else:
         styles[1] = 'font-weight: bold;'
@@ -411,7 +411,7 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                 race_evaluations.sort(key=lambda x: x['調子スコア'], reverse=True)
                                 for rank, p in enumerate(race_evaluations, 1):
                                     p['勢いギャップ'] = p['得点順位'] - rank 
-                                    p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ * 3.0'] if '勢いギャップ * 3.0' in p else p['勢いギャップ'] * 3.0), 2)
+                                    p['総合期待度'] = round(p['調子スコア'] + (p['勢いギャップ'] * 3.0), 2)
 
                                 race_evaluations.sort(key=lambda x: x['総合期待度'], reverse=True)
                                 
@@ -431,23 +431,19 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                     third_place = top5_waku[:5]
                                     
                                     # ==========================================
-                                    # 【新機能】スコア差15以上によるボーナス判定
+                                    # 【ボーナス】スコア差15以上による評価上昇
                                     # ==========================================
-                                    # 1着候補の差が15以上なら1位にボーナス
                                     w1_bonus_waku = None
                                     if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15:
                                         w1_bonus_waku = str(top_players[0]['raw_waku'])
                                     
-                                    # 2着候補（2位と3位）の差が15以上なら2位にボーナス
                                     w2_bonus_waku = None
                                     if len(top_players) >= 3 and (top_players[1]['総合期待度'] - top_players[2]['総合期待度']) >= 15:
                                         w2_bonus_waku = str(top_players[1]['raw_waku'])
                                         
-                                    # 3着候補（3位と4位）の差が15以上なら3位にボーナス
                                     w3_bonus_waku = None
                                     if len(top_players) >= 4 and (top_players[2]['総合期待度'] - top_players[3]['総合期待度']) >= 15:
                                         w3_bonus_waku = str(top_players[2]['raw_waku'])
-                                    # ==========================================
                                     
                                     for first in first_place:
                                         for second in second_place:
@@ -467,14 +463,10 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                         
                                         base_score = s1 + s2 + s3
                                         
-                                        # 各ポジションのボーナスを加算（差が15以上離れている選手を強く押し上げる）
                                         bonus = 0
-                                        if w1_bonus_waku and w1 == w1_bonus_waku:
-                                            bonus += 100000
-                                        if w2_bonus_waku and w2 == w2_bonus_waku:
-                                            bonus += 50000
-                                        if w3_bonus_waku and w3 == w3_bonus_waku:
-                                            bonus += 25000
+                                        if w1_bonus_waku and w1 == w1_bonus_waku: bonus += 100000
+                                        if w2_bonus_waku and w2 == w2_bonus_waku: bonus += 50000
+                                        if w3_bonus_waku and w3 == w3_bonus_waku: bonus += 25000
                                             
                                         expected_score = base_score + bonus
                                         has_bonus = bonus > 0
@@ -491,30 +483,28 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                     ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
                                     
                                     total_budget = 1200
-                                    target_payout = total_budget * 1.5
                                     
-                                    ev_dict = {ev['ticket']: ev for ev in ticket_evaluations}
-                                    active_tickets = [ev['ticket'] for ev in ticket_evaluations]
-                                    bets = {t: 100 for t in active_tickets}
-                                    
-                                    while True:
-                                        under_target_tickets = [t for t in active_tickets if ev_dict[t]['odds'] > 0 and (bets[t] * ev_dict[t]['odds']) < target_payout]
-                                        if not under_target_tickets: break
-                                        if len(active_tickets) <= 1: break
-                                            
-                                        lowest_ticket = active_tickets.pop()
-                                        freed_funds = bets[lowest_ticket]
-                                        del bets[lowest_ticket]
+                                    # ==========================================
+                                    # 【資金配分】均等バランス調整ロジック
+                                    # ==========================================
+                                    active_tickets = [ev['ticket'] for ev in ticket_evaluations if ev['odds'] > 0]
+                                    if not active_tickets:
+                                        active_tickets = [ev['ticket'] for ev in ticket_evaluations[:6]] 
+                                    else:
+                                        active_tickets = active_tickets[:8] 
                                         
-                                        while freed_funds > 0:
-                                            current_under_target = [t for t in active_tickets if ev_dict[t]['odds'] > 0 and (bets[t] * ev_dict[t]['odds']) < target_payout]
-                                            if current_under_target:
-                                                target = min(current_under_target, key=lambda t: bets[t] * ev_dict[t]['odds'])
-                                                bets[target] += 100
-                                                freed_funds -= 100
-                                            else:
-                                                bets[active_tickets[0]] += freed_funds
-                                                freed_funds = 0
+                                    ev_dict = {ev['ticket']: ev for ev in ticket_evaluations}
+                                    
+                                    bets = {t: 100 for t in active_tickets}
+                                    remaining_budget = total_budget - (100 * len(active_tickets))
+                                    if remaining_budget < 0:
+                                        remaining_budget = 0
+                                        bets = {t: 100 for t in active_tickets[:12]}
+                                        
+                                    while remaining_budget >= 100:
+                                        lowest_t = min(active_tickets, key=lambda t: bets[t] * ev_dict[t]['odds'] if ev_dict[t]['odds'] > 0 else 999999)
+                                        bets[lowest_t] += 100
+                                        remaining_budget -= 100
 
                                     result_rows = []
                                     for rank, ev in enumerate(ticket_evaluations, 1):
@@ -525,12 +515,10 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                         if ev['has_bonus']:
                                             score_str += " ★"
                                         
-                                        if t in active_tickets:
+                                        if t in bets:
                                             bet = bets[t]
                                             payout = bet * odds_val if odds_val > 0 else 0
                                             payout_str = f"¥{payout:,.0f}" if odds_val > 0 else "-"
-                                            if odds_val > 0 and payout < target_payout:
-                                                payout_str += " (未達)"
                                             
                                             result_rows.append({
                                                 "優先順位": f"{rank}位",
@@ -546,12 +534,12 @@ if st.button("🚀 本日のレースデータを取得開始"):
                                                 "買い目": t,
                                                 "調子期待値": score_str,
                                                 "現在オッズ": odds_str,
-                                                "購入額": "削除",
+                                                "購入額": "見送り",
                                                 "払戻見込": "-"
                                             })
                                     
                                     df_results = pd.DataFrame(result_rows)
-                                    st.markdown("##### 💰 資金配分 (目標回収率150% / 1800円)")
+                                    st.markdown("##### 💰 資金配分 (バランス分散型 / 1200円)")
                                     styled_results = df_results.style.apply(style_bets, axis=1)
                                     st.dataframe(styled_results, hide_index=True, use_container_width=True)
                                     
