@@ -55,7 +55,7 @@ def calculate_condition_score(past_races):
     return round(total_score / valid_race_count, 2)
 
 # ==========================================
-# 買い目生成ロジックの共通化（軽量化のため独立）
+# 買い目生成ロジックの共通化
 # ==========================================
 def generate_ticket_evaluations(evals):
     tickets = []
@@ -318,8 +318,10 @@ def extract_ticket_odds(page, race_id, tickets):
 # 自動取得（バッチ）用ロジック
 # ==========================================
 def run_heavy_scraping():
-    today_str = get_today_str()
-    scraped_data = {"date": today_str, "races": []}
+    now = datetime.now(JST)
+    today_str = now.strftime("%Y-%m-%d")
+    timestamp_str = now.isoformat()
+    scraped_data = {"date": today_str, "timestamp": timestamp_str, "races": []}
     
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -436,15 +438,29 @@ def style_pre(row):
 st.set_page_config(page_title="ガールズケイリン予想システム", page_icon="🚴‍♀️", layout="wide")
 st.title("🚴‍♀️ ガールズケイリン予想＆資金配分システム")
 
-today_str = get_today_str()
+now = datetime.now(JST)
+today_str = now.strftime("%Y-%m-%d")
 data = None
 
 if os.path.exists(DATA_FILE):
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+            
+        # 今日の日付でない場合は無効
         if data.get("date") != today_str:
             data = None 
+        else:
+            # 現在時刻が朝7時を過ぎている場合、データが7時前に取得されたものなら無効化する
+            seven_am = now.replace(hour=7, minute=0, second=0, microsecond=0)
+            if now >= seven_am:
+                ts_str = data.get("timestamp")
+                if ts_str:
+                    data_ts = datetime.fromisoformat(ts_str)
+                    if data_ts < seven_am:
+                        data = None  # 7時より前に取得されたデータは破棄
+                else:
+                    data = None  # timestampが無い(古いコードで作成された)場合も破棄
     except:
         data = None
 
@@ -461,7 +477,13 @@ if data is None:
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
 else:
-    st.success(f"✅ {data['date']} の出走表データ読み込み完了（全{len(data['races'])}レース）")
+    # 取得時刻をわかりやすく表示
+    fetched_time_str = ""
+    if "timestamp" in data:
+        dt = datetime.fromisoformat(data["timestamp"])
+        fetched_time_str = dt.strftime("%H:%M")
+        
+    st.success(f"✅ {data['date']} の出走表データ読み込み完了（取得時刻: {fetched_time_str} / 全{len(data['races'])}レース）")
     
     for race in data['races']:
         venue = race['venue_name']
@@ -484,7 +506,6 @@ else:
             
             st.markdown("##### 🚴‍♀️ 出走選手データ (総合期待度順)")
             styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
-            # 警告を出さないよう use_container_width パラメータを削除
             st.dataframe(styled_players, hide_index=True)
             
             # --- 2つのボタンを横並びに配置 ---
