@@ -24,6 +24,18 @@ GRADE_WEIGHTS = {
 def get_today_str():
     return datetime.now(JST).strftime("%Y-%m-%d")
 
+# 発走時刻ソート用の補助関数
+def get_sort_time(time_str):
+    if not time_str:
+        return "23:59"  # 時刻がない場合は最後尾へ
+    if ':' in time_str:
+        try:
+            h, m = time_str.split(':', 1)
+            return f"{int(h):02d}:{m}"
+        except:
+            return time_str
+    return time_str
+
 def calculate_condition_score(past_races):
     total_score = 0
     valid_race_count = 0
@@ -397,6 +409,9 @@ def run_heavy_scraping():
         finally:
             browser.close()
             
+    # ★ 発走時刻順にソートして保存
+    scraped_data["races"].sort(key=lambda x: get_sort_time(x.get('start_time', '')))
+            
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(scraped_data, f, ensure_ascii=False, indent=2)
 
@@ -447,20 +462,18 @@ if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             
-        # 今日の日付でない場合は無効
         if data.get("date") != today_str:
             data = None 
         else:
-            # 現在時刻が朝7時を過ぎている場合、データが7時前に取得されたものなら無効化する
             seven_am = now.replace(hour=7, minute=0, second=0, microsecond=0)
             if now >= seven_am:
                 ts_str = data.get("timestamp")
                 if ts_str:
                     data_ts = datetime.fromisoformat(ts_str)
                     if data_ts < seven_am:
-                        data = None  # 7時より前に取得されたデータは破棄
+                        data = None
                 else:
-                    data = None  # timestampが無い(古いコードで作成された)場合も破棄
+                    data = None
     except:
         data = None
 
@@ -477,13 +490,15 @@ if data is None:
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
 else:
-    # 取得時刻をわかりやすく表示
     fetched_time_str = ""
     if "timestamp" in data:
         dt = datetime.fromisoformat(data["timestamp"])
         fetched_time_str = dt.strftime("%H:%M")
         
     st.success(f"✅ {data['date']} の出走表データ読み込み完了（取得時刻: {fetched_time_str} / 全{len(data['races'])}レース）")
+    
+    # ★ 読み込んだデータに対しても発走時刻順でソート（既存のデータ読み込み時用）
+    data['races'].sort(key=lambda x: get_sort_time(x.get('start_time', '')))
     
     for race in data['races']:
         venue = race['venue_name']
@@ -508,7 +523,6 @@ else:
             styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
             st.dataframe(styled_players, hide_index=True)
             
-            # --- 2つのボタンを横並びに配置 ---
             col1, col2 = st.columns([1, 1])
             with col1:
                 if st.button(f"🎯 買い目を事前確認", key=f"btn_tic_{r_id}"):
@@ -574,7 +588,6 @@ else:
                         except Exception as e:
                             st.error(f"オッズ取得でエラーが発生しました: {e}")
 
-            # --- ボタンによって表示内容を切り替え ---
             current_mode = st.session_state.get(f"mode_{r_id}")
             
             if current_mode == "tickets":
