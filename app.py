@@ -36,9 +36,12 @@ def get_sort_time(time_str):
             return time_str
     return time_str
 
+# ==========================================
+# 修正箇所: 調子スコア計算関数（純粋な加重平均へ変更）
+# ==========================================
 def calculate_condition_score(past_races):
     total_score = 0
-    valid_race_count = 0
+    total_weight = 0.0  # 出走回数ではなく、重みの合計を記録する
     
     for r in past_races:
         race_grade = r['grade']
@@ -61,10 +64,12 @@ def calculate_condition_score(past_races):
                 break
                 
         total_score += (base_pt * grade_weight * time_weight)
-        valid_race_count += 1
+        total_weight += time_weight
         
-    if valid_race_count == 0: return 0.0
-    return round(total_score / valid_race_count, 2)
+    if total_weight == 0: 
+        return 0.0
+    
+    return round(total_score / total_weight, 2)
 
 # ==========================================
 # 買い目生成ロジックの共通化
@@ -471,8 +476,8 @@ if os.path.exists(DATA_FILE):
                     data_ts = datetime.fromisoformat(ts_str)
                     if data_ts < seven_am:
                         data = None
-                else:
-                    data = None
+            else:
+                data = None
     except:
         data = None
 
@@ -509,7 +514,6 @@ else:
         time_info_str = ""
         is_finished = False
         
-        # 締切時刻から10分経過しているかどうかの判定
         if c_time:
             try:
                 ch, cm = map(int, c_time.split(':'))
@@ -525,7 +529,6 @@ else:
             if c_time: time_parts.append(f"締切 {c_time}")
             time_info_str = f" ｜ ⏰ {' / '.join(time_parts)}"
             
-        # 終了フラグによってタイトルを変更
         if is_finished:
             expander_title = f"🏁【レース終了】 🏆 【{venue}】 {r_num}R (L級){time_info_str}"
         else:
