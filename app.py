@@ -27,7 +27,7 @@ def get_today_str():
 # 発走時刻ソート用の補助関数
 def get_sort_time(time_str):
     if not time_str:
-        return "23:59"  # 時刻がない場合は最後尾へ
+        return "23:59"  
     if ':' in time_str:
         try:
             h, m = time_str.split(':', 1)
@@ -409,7 +409,6 @@ def run_heavy_scraping():
         finally:
             browser.close()
             
-    # ★ 発走時刻順にソートして保存
     scraped_data["races"].sort(key=lambda x: get_sort_time(x.get('start_time', '')))
             
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -497,7 +496,6 @@ else:
         
     st.success(f"✅ {data['date']} の出走表データ読み込み完了（取得時刻: {fetched_time_str} / 全{len(data['races'])}レース）")
     
-    # ★ 読み込んだデータに対しても発走時刻順でソート（既存のデータ読み込み時用）
     data['races'].sort(key=lambda x: get_sort_time(x.get('start_time', '')))
     
     for race in data['races']:
@@ -509,13 +507,31 @@ else:
         s_time = race.get('start_time', '')
         c_time = race.get('close_time', '')
         time_info_str = ""
+        is_finished = False
+        
+        # 締切時刻から10分経過しているかどうかの判定
+        if c_time:
+            try:
+                ch, cm = map(int, c_time.split(':'))
+                close_dt = now.replace(hour=ch, minute=cm, second=0, microsecond=0)
+                if now >= close_dt + timedelta(minutes=10):
+                    is_finished = True
+            except:
+                pass
+        
         if s_time or c_time:
             time_parts = []
             if s_time: time_parts.append(f"発走 {s_time}")
             if c_time: time_parts.append(f"締切 {c_time}")
             time_info_str = f" ｜ ⏰ {' / '.join(time_parts)}"
             
-        with st.expander(f"🏆 【{venue}】 {r_num}R (L級){time_info_str}", expanded=False):
+        # 終了フラグによってタイトルを変更
+        if is_finished:
+            expander_title = f"🏁【レース終了】 🏆 【{venue}】 {r_num}R (L級){time_info_str}"
+        else:
+            expander_title = f"🏆 【{venue}】 {r_num}R (L級){time_info_str}"
+            
+        with st.expander(expander_title, expanded=False):
             df_players = pd.DataFrame(evals)
             df_players.insert(0, '想定順位', [f"{r}位" for r in range(1, len(df_players) + 1)])
             
