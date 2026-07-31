@@ -72,7 +72,7 @@ def calculate_condition_score(past_races):
     return round(total_score / total_weight, 2)
 
 # ==========================================
-# 買い目生成ロジックの共通化
+# 買い目生成ロジックの共通化（1強特化フォーメーション対応）
 # ==========================================
 def generate_ticket_evaluations(evals):
     tickets = []
@@ -81,14 +81,31 @@ def generate_ticket_evaluations(evals):
     top_players = evals[:5] 
     top5_waku = [str(p['raw_waku']) for p in top_players]
     
-    w1_bonus_waku = str(top_players[0]['raw_waku']) if (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15 else None
+    # 鉄板判定（1位と2位の総合期待度の差が15以上か）
+    is_ironclad_1st = (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15
+    
+    # ボーナス判定
+    w1_bonus_waku = str(top_players[0]['raw_waku']) if is_ironclad_1st else None
     w2_bonus_waku = str(top_players[1]['raw_waku']) if len(top_players) >= 3 and (top_players[1]['総合期待度'] - top_players[2]['総合期待度']) >= 15 else None
     w3_bonus_waku = str(top_players[2]['raw_waku']) if len(top_players) >= 4 and (top_players[2]['総合期待度'] - top_players[3]['総合期待度']) >= 15 else None
     
-    for first in top5_waku[:2]:
-        for second in top5_waku[:3]:
+    # --- 買い目フォーメーションの分岐 ---
+    if is_ironclad_1st:
+        # 【1強パターン】1着:1位 / 2着:2,3位 / 3着:2〜5位（最大6点に限定）
+        first_candidates = [top5_waku[0]]
+        second_candidates = top5_waku[1:3]
+        third_candidates = top5_waku[1:5]
+    else:
+        # 【通常パターン】1着:1,2位 / 2着:1〜3位 / 3着:1〜5位（既存のロジック）
+        first_candidates = top5_waku[:2]
+        second_candidates = top5_waku[:3]
+        third_candidates = top5_waku[:5]
+    
+    # 買い目の生成
+    for first in first_candidates:
+        for second in second_candidates:
             if first == second: continue
-            for third in top5_waku[:5]:
+            for third in third_candidates:
                 if first == third or second == third: continue
                 tickets.append(f"{first}-{second}-{third}")
     
@@ -555,6 +572,13 @@ else:
                 styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
                 st.dataframe(styled_players, hide_index=True)
                 
+                # --- 追加箇所：1強時のアラート表示 ---
+                if len(evals) >= 2:
+                    gap_1_2 = evals[0]['総合期待度'] - evals[1]['総合期待度']
+                    if gap_1_2 >= 15:
+                        st.success(f"🔥 **鉄板レース検知！** 1位と2位の評価ギャップが **{gap_1_2:.2f}** あります。1着を【{evals[0]['車番']}番 {evals[0]['選手名']}】に完全固定して買い目を生成します。")
+                # -------------------------------------
+
                 col1, col2 = st.columns([1, 1])
                 with col1:
                     if st.button(f"🎯 買い目を事前確認", key=f"btn_tic_{r_id}"):
