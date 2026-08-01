@@ -27,7 +27,6 @@ jobs:
           pip install pandas streamlit playwright
           playwright install chromium
           playwright install-deps
-
       - name: Run Scraping Script
         run: python app.py --scrape
 
