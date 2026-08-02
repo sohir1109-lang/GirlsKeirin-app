@@ -3,7 +3,7 @@ name: Daily Race Scraping
 on:
   schedule:
     # 毎日UTC 22:00 = 日本時間(JST) 07:00 に実行
-    - cron: '0 22 * * *'
+    - cron: '45 21* * *'
   workflow_dispatch: # 手動でActionを動かしたい時のための記述
 
 jobs:
