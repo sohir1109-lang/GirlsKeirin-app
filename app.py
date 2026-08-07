@@ -154,12 +154,25 @@ def extract_entry_data(page, entry_url):
     info = page.evaluate(r'''() => {
         const title = document.title || '';
         let isGirls = false;
-        if (title.includes('L級') || title.includes('ガールズ')) isGirls = true;
+        
+        // タイトルにキーワードが含まれるか判定（ドリームやアルテミスを追加）
+        if (title.includes('L級') || title.includes('ガールズ') || title.includes('ドリーム') || title.includes('アルテミス') || title.includes('グランプリ') || title.includes('コレクション')) {
+            isGirls = true;
+        }
+        
         const header = document.querySelector('.Race_Title, .Race_Header, .RaceList_Data');
         if (header) {
-            if (header.innerText.includes('L級') || header.innerText.includes('ガールズ')) isGirls = true;
-            if (header.querySelector('.Icon_RaceMark.Girls')) isGirls = true;
+            // ヘッダーのテキストにキーワードが含まれるか判定
+            if (header.innerText.includes('L級') || header.innerText.includes('ガールズ') || header.innerText.includes('ドリーム') || header.innerText.includes('アルテミス') || header.innerText.includes('グランプリ') || header.innerText.includes('コレクション')) {
+                isGirls = true;
+            }
+            
+            // ガールズ特有のアイコンがあるか判定（上の条件とは独立させる）
+            if (header.querySelector('.Icon_RaceMark.Girls')) {
+                isGirls = true;
+            }
         }
+        
         let venue = "";
         let match = title.match(/([^\s【]+)競輪/);
         if (match) venue = match[1];
