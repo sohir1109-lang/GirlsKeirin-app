@@ -37,16 +37,33 @@ def get_sort_time(time_str):
     return time_str
 
 # ==========================================
-# 修正箇所: 調子スコア計算関数（純粋な加重平均へ変更）
+# 修正箇所: 調子スコア計算関数（ビッグレースを無視・スキップする仕様）
 # ==========================================
 def calculate_condition_score(past_races):
     total_score = 0
-    total_weight = 0.0  # 出走回数ではなく、重みの合計を記録する
+    total_weight = 0.0  
     
     for r in past_races:
         race_grade = r['grade']
         rank = r['rank']
         time_weight = r['time_weight'] 
+        
+        # --- 💡 追加：ビッグレース（特別競走）の除外処理 ---
+        # 過去成績のテキストに、通常のグレード（決、予、特、選、般など）が含まれているか判定
+        is_standard_race = False
+        grade_weight = 1.0
+        
+        for key, w in GRADE_WEIGHTS.items():
+            if key in race_grade:
+                is_standard_race = True
+                grade_weight = w
+                break
+                
+        # 通常グレードが含まれていない（＝ガド、ガグ等の特殊なレース）場合は、
+        # 相手が強すぎて参考にならないため、スコア計算から完全にスキップ（無視）する
+        if not is_standard_race:
+            continue
+        # ----------------------------------------------------
         
         if rank == 1: base_pt = 100
         elif rank == 2: base_pt = 85
@@ -57,12 +74,6 @@ def calculate_condition_score(past_races):
         elif 7 <= rank <= 9: base_pt = 0
         else: continue 
             
-        grade_weight = 1.0
-        for key, w in GRADE_WEIGHTS.items():
-            if key in race_grade:
-                grade_weight = w
-                break
-                
         total_score += (base_pt * grade_weight * time_weight)
         total_weight += time_weight
         
@@ -149,6 +160,9 @@ def get_girls_venue_urls(page, schedule_url):
         return Array.from(links);
     }''')
 
+# ==========================================
+# 修正箇所: ドリームレース等を拾うためのHTML判定
+# ==========================================
 def extract_entry_data(page, entry_url):
     page.goto(entry_url, timeout=30000, wait_until="domcontentloaded")
     info = page.evaluate(r'''() => {
