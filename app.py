@@ -37,7 +37,7 @@ def get_sort_time(time_str):
     return time_str
 
 # ==========================================
-# 修正箇所: 調子スコア計算関数（ビッグレースを無視・スキップする仕様）
+# 調子スコア計算関数（ビッグレースを無視・スキップする仕様）
 # ==========================================
 def calculate_condition_score(past_races):
     total_score = 0
@@ -48,8 +48,7 @@ def calculate_condition_score(past_races):
         rank = r['rank']
         time_weight = r['time_weight'] 
         
-        # --- 💡 追加：ビッグレース（特別競走）の除外処理 ---
-        # 過去成績のテキストに、通常のグレード（決、予、特、選、般など）が含まれているか判定
+        # --- ビッグレース（特別競走）の除外処理 ---
         is_standard_race = False
         grade_weight = 1.0
         
@@ -63,7 +62,6 @@ def calculate_condition_score(past_races):
         # 相手が強すぎて参考にならないため、スコア計算から完全にスキップ（無視）する
         if not is_standard_race:
             continue
-        # ----------------------------------------------------
         
         if rank == 1: base_pt = 100
         elif rank == 2: base_pt = 85
@@ -161,7 +159,7 @@ def get_girls_venue_urls(page, schedule_url):
     }''')
 
 # ==========================================
-# 修正箇所: ドリームレース等を拾うためのHTML判定
+# 修正箇所: ドリームレース等を除外し、L級判定を厳密にする
 # ==========================================
 def extract_entry_data(page, entry_url):
     page.goto(entry_url, timeout=30000, wait_until="domcontentloaded")
@@ -169,22 +167,24 @@ def extract_entry_data(page, entry_url):
         const title = document.title || '';
         let isGirls = false;
         
-        // タイトルにキーワードが含まれるか判定（ドリームやアルテミスを追加）
-        if (title.includes('L級') || title.includes('ガールズ') || title.includes('ドリーム') || title.includes('アルテミス') || title.includes('グランプリ') || title.includes('コレクション')) {
+        // 1. タイトル判定（「L級」は確実）
+        if (title.includes('L級')) {
             isGirls = true;
         }
         
-        const header = document.querySelector('.Race_Title, .Race_Header, .RaceList_Data');
-        if (header) {
-            // ヘッダーのテキストにキーワードが含まれるか判定
-            if (header.innerText.includes('L級') || header.innerText.includes('ガールズ') || header.innerText.includes('ドリーム') || header.innerText.includes('アルテミス') || header.innerText.includes('グランプリ') || header.innerText.includes('コレクション')) {
+        // 2. レースタイトル部分の厳密な判定
+        const titleArea = document.querySelector('.Race_Title') || document.querySelector('.Race_Header');
+        if (titleArea) {
+            // ガールズ専用アイコンがあるか、または見出しにL級と入っているか
+            if (titleArea.querySelector('.Icon_RaceMark.Girls') || titleArea.innerText.includes('L級')) {
                 isGirls = true;
             }
-            
-            // ガールズ特有のアイコンがあるか判定（上の条件とは独立させる）
-            if (header.querySelector('.Icon_RaceMark.Girls')) {
-                isGirls = true;
-            }
+        }
+        
+        // 3. レース基本データ部分の判定
+        const dataArea = document.querySelector('.RaceList_Data');
+        if (dataArea && dataArea.innerText.includes('L級')) {
+            isGirls = true;
         }
         
         let venue = "";
@@ -205,8 +205,10 @@ def extract_entry_data(page, entry_url):
 
         return { is_girls: isGirls, venue: venue, start_time: startTime, close_time: closeTime };
     }''')
+    
     if not info['is_girls']: return None
     page.wait_for_timeout(2000)
+    
     players = page.evaluate(r'''() => {
         const results = [];
         const seen = new Set();
@@ -505,7 +507,7 @@ now = datetime.now(JST)
 today_str = now.strftime("%Y-%m-%d")
 data = None
 
-# 【修正箇所】JSON読み込みの堅牢化（AttributeError防止）
+# JSON読み込みの堅牢化（AttributeError防止）
 if os.path.exists(DATA_FILE):
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -554,7 +556,7 @@ else:
         
     st.success(f"✅ {data['date']} の出走表データ読み込み完了（取得時刻: {fetched_time_str} / 全{len(data.get('races', []))}レース）")
     
-    # 【修正箇所】ソート時のAttributeError防止（辞書型であることを保証）
+    # ソート時のAttributeError防止（辞書型であることを保証）
     safe_races = [r for r in data.get('races', []) if isinstance(r, dict)]
     safe_races.sort(key=lambda x: get_sort_time(str(x.get('start_time', ''))))
     data['races'] = safe_races
@@ -599,7 +601,7 @@ else:
                 styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
                 st.dataframe(styled_players, hide_index=True)
                 
-                # --- 追加箇所：1強時のアラート表示 ---
+                # --- 1強時のアラート表示 ---
                 if len(evals) >= 2:
                     gap_1_2 = evals[0]['総合期待度'] - evals[1]['総合期待度']
                     if gap_1_2 >= 15:
