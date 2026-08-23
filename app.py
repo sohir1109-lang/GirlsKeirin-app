@@ -36,9 +36,6 @@ def get_sort_time(time_str):
             return time_str
     return time_str
 
-# ==========================================
-# 調子スコア計算関数（ビッグレースを無視・スキップする仕様）
-# ==========================================
 def calculate_condition_score(past_races):
     total_score = 0
     total_weight = 0.0  
@@ -48,7 +45,6 @@ def calculate_condition_score(past_races):
         rank = r['rank']
         time_weight = r['time_weight'] 
         
-        # --- ビッグレース（特別競走）の除外処理 ---
         is_standard_race = False
         grade_weight = 1.0
         
@@ -58,8 +54,6 @@ def calculate_condition_score(past_races):
                 grade_weight = w
                 break
                 
-        # 通常グレードが含まれていない（＝ガド、ガグ等の特殊なレース）場合は、
-        # 相手が強すぎて参考にならないため、スコア計算から完全にスキップ（無視）する
         if not is_standard_race:
             continue
         
@@ -80,9 +74,6 @@ def calculate_condition_score(past_races):
     
     return round(total_score / total_weight, 2)
 
-# ==========================================
-# 買い目生成ロジックの共通化（1強特化フォーメーション対応）
-# ==========================================
 def generate_ticket_evaluations(evals):
     tickets = []
     if len(evals) < 5: return []
@@ -90,27 +81,21 @@ def generate_ticket_evaluations(evals):
     top_players = evals[:5] 
     top5_waku = [str(p['raw_waku']) for p in top_players]
     
-    # 鉄板判定（1位と2位の総合期待度の差が15以上か）
     is_ironclad_1st = (top_players[0]['総合期待度'] - top_players[1]['総合期待度']) >= 15
     
-    # ボーナス判定
     w1_bonus_waku = str(top_players[0]['raw_waku']) if is_ironclad_1st else None
     w2_bonus_waku = str(top_players[1]['raw_waku']) if len(top_players) >= 3 and (top_players[1]['総合期待度'] - top_players[2]['総合期待度']) >= 15 else None
     w3_bonus_waku = str(top_players[2]['raw_waku']) if len(top_players) >= 4 and (top_players[2]['総合期待度'] - top_players[3]['総合期待度']) >= 15 else None
     
-    # --- 買い目フォーメーションの分岐 ---
     if is_ironclad_1st:
-        # 【1強パターン】1着:1位 / 2着:2,3位 / 3着:2〜5位（最大6点に限定）
         first_candidates = [top5_waku[0]]
         second_candidates = top5_waku[1:3]
         third_candidates = top5_waku[1:5]
     else:
-        # 【通常パターン】1着:1,2位 / 2着:1〜3位 / 3着:1〜5位（既存のロジック）
         first_candidates = top5_waku[:2]
         second_candidates = top5_waku[:3]
         third_candidates = top5_waku[:5]
     
-    # 買い目の生成
     for first in first_candidates:
         for second in second_candidates:
             if first == second: continue
@@ -139,54 +124,58 @@ def generate_ticket_evaluations(evals):
     ticket_evaluations.sort(key=lambda x: (x['expected_score'], x['s1'], x['s2'], x['s3']), reverse=True)
     return ticket_evaluations
 
-def get_girls_venue_urls(page, schedule_url):
+# ==========================================
+# 修正箇所: 本日の「全会場」のURLを確実に取得する
+# ==========================================
+def get_all_venue_urls(page, schedule_url):
     page.goto(schedule_url, timeout=60000, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
     return page.evaluate(r'''() => {
-        const icons = document.querySelectorAll('.Icon_RaceMark.Girls');
         const links = new Set();
-        icons.forEach(icon => {
-            const cell = icon.closest('td') || icon.closest('li') || icon.closest('div');
-            if (cell) {
-                const cellLinks = cell.querySelectorAll('a');
-                cellLinks.forEach(a => {
-                    const href = a.getAttribute('href');
-                    if (href && href.includes('race_id') && !href.includes('javascript')) links.add(a.href);
-                });
+        const aTags = document.querySelectorAll('a');
+        aTags.forEach(a => {
+            const href = a.getAttribute('href');
+            // race_idが含まれるリンクを全て取得（漏れを無くす）
+            if (href && href.includes('race_id=') && !href.includes('javascript')) {
+                links.add(a.href);
             }
         });
         return Array.from(links);
     }''')
 
 # ==========================================
-# 修正箇所: ドリームレース等を除外し、L級判定を厳密にする
+# 修正箇所: ガールズケイリンの判定を「クラス（Ｌ１）」などで完全判定
 # ==========================================
 def extract_entry_data(page, entry_url):
     page.goto(entry_url, timeout=30000, wait_until="domcontentloaded")
+    page.wait_for_timeout(1000) # DOM描画待ち
     info = page.evaluate(r'''() => {
-        const title = document.title || '';
         let isGirls = false;
         
-        // 1. タイトル判定（「L級」は確実）
-        if (title.includes('L級')) {
-            isGirls = true;
-        }
-        
-        // 2. レースタイトル部分の厳密な判定
-        const titleArea = document.querySelector('.Race_Title') || document.querySelector('.Race_Header');
-        if (titleArea) {
-            // ガールズ専用アイコンがあるか、または見出しにL級と入っているか
-            if (titleArea.querySelector('.Icon_RaceMark.Girls') || titleArea.innerText.includes('L級')) {
-                isGirls = true;
-            }
-        }
-        
-        // 3. レース基本データ部分の判定
+        const header = document.querySelector('.Race_Title') || document.querySelector('.Race_Header');
         const dataArea = document.querySelector('.RaceList_Data');
-        if (dataArea && dataArea.innerText.includes('L級')) {
+        
+        let targetText = '';
+        if (header) targetText += header.innerText + ' ';
+        if (dataArea) targetText += dataArea.innerText + ' ';
+        
+        // 1. レース名や出走表に「L級」「Ｌ級」「L1」「Ｌ１」「ガールズ」が含まれているか（全角半角対応）
+        if (targetText.includes('L級') || targetText.includes('Ｌ級') || targetText.includes('L1') || targetText.includes('Ｌ１') || targetText.includes('ガールズ')) {
             isGirls = true;
         }
         
+        // 2. アイコンがあるか
+        if (document.querySelector('.Icon_RaceMark.Girls')) {
+            isGirls = true;
+        }
+        
+        // 3. 誤爆防止: S級・A級のみのレースは強制除外（男子確定のため）
+        if ((targetText.includes('Ｓ級') || targetText.includes('S級') || targetText.includes('Ａ級') || targetText.includes('A級')) 
+            && !(targetText.includes('Ｌ級') || targetText.includes('L級') || targetText.includes('ガールズ'))) {
+            isGirls = false;
+        }
+        
+        const title = document.title || '';
         let venue = "";
         let match = title.match(/([^\s【]+)競輪/);
         if (match) venue = match[1];
@@ -377,9 +366,6 @@ def extract_ticket_odds(page, race_id, tickets):
         return result;
     }''', tickets)
 
-# ==========================================
-# 自動取得（バッチ）用ロジック
-# ==========================================
 def run_heavy_scraping():
     now = datetime.now(JST)
     today_str = now.strftime("%Y-%m-%d")
@@ -396,7 +382,7 @@ def run_heavy_scraping():
         page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
         try:
-            target_urls = get_girls_venue_urls(page, TODAY_SCHEDULE_URL)
+            target_urls = get_all_venue_urls(page, TODAY_SCHEDULE_URL)
             base_ids = set()
             for url in target_urls:
                 match = re.search(r'race_id=(\d{10})\d{2}', url)
@@ -507,13 +493,11 @@ now = datetime.now(JST)
 today_str = now.strftime("%Y-%m-%d")
 data = None
 
-# JSON読み込みの堅牢化（AttributeError防止）
 if os.path.exists(DATA_FILE):
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
             
-        # 想定外の構造（リストなど）になっていないかチェック
         if isinstance(raw_data, dict) and "races" in raw_data:
             data = raw_data
         else:
@@ -540,7 +524,7 @@ if data is None:
     st.warning(f"本日 ({today_str}) の出走表データがまだ準備されていません。")
     st.info("💡 朝7:00以前に確認したい場合やデータ未作成時は、下のボタンから手動で出走表を取得・生成できます。")
     if st.button("🚀 手動で本日の出走表を取得・予想作成"):
-        with st.spinner("出走表と過去成績を取得・計算しています。数分お待ちください..."):
+        with st.spinner("出走表と過去成績を取得・計算しています。男子レースを弾きながら探すため、数分お待ちください..."):
             try:
                 run_heavy_scraping()
                 st.success("取得が完了しました！画面を更新します。")
@@ -556,7 +540,6 @@ else:
         
     st.success(f"✅ {data['date']} の出走表データ読み込み完了（取得時刻: {fetched_time_str} / 全{len(data.get('races', []))}レース）")
     
-    # ソート時のAttributeError防止（辞書型であることを保証）
     safe_races = [r for r in data.get('races', []) if isinstance(r, dict)]
     safe_races.sort(key=lambda x: get_sort_time(str(x.get('start_time', ''))))
     data['races'] = safe_races
@@ -601,12 +584,10 @@ else:
                 styled_players = df_players[['想定順位', '車番', '選手名', '競走得点', '調子スコア', '勢いギャップ', '総合期待度']].style.apply(style_players, axis=1)
                 st.dataframe(styled_players, hide_index=True)
                 
-                # --- 1強時のアラート表示 ---
                 if len(evals) >= 2:
                     gap_1_2 = evals[0]['総合期待度'] - evals[1]['総合期待度']
                     if gap_1_2 >= 15:
                         st.success(f"🔥 **鉄板レース検知！** 1位と2位の評価ギャップが **{gap_1_2:.2f}** あります。1着を【{evals[0]['車番']}番 {evals[0]['選手名']}】に完全固定して買い目を生成します。")
-                # -------------------------------------
 
                 col1, col2 = st.columns([1, 1])
                 with col1:
