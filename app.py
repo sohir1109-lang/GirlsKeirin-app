@@ -89,7 +89,7 @@ def generate_ticket_evaluations(evals):
     
     if is_ironclad_1st:
         first_candidates = [top5_waku[0]]
-        second_candidates = top5_waku[1:5]
+        second_candidates = top5_waku[1:3]
         third_candidates = top5_waku[1:5]
     else:
         first_candidates = top5_waku[:2]
